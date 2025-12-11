@@ -23,6 +23,8 @@ tags:
     description: JWT token generation and management
   - name: Group Management
     description: User group and permission management
+  - name: Server Ratings
+    description: Rate and review servers
 
 paths:
   /api/:
@@ -600,6 +602,127 @@ paths:
               schema:
                 $ref: '#/components/schemas/GroupListResponse'
 
+  /api/servers/rate:
+    post:
+      tags:
+        - Server Ratings
+      summary: Rate a server
+      description: |
+        Submit a rating (1-5 stars) for a server. Each user can only have one active rating.
+        If user has already rated, this updates their existing rating. The system maintains
+        a rotating buffer of the last 100 ratings to prevent unbounded growth.
+      operationId: rateServer
+      security:
+        - BasicAuth: []
+      parameters:
+        - name: path
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Server path (e.g., cloudflare-docs)
+          example: cloudflare-docs
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RatingRequest'
+            example:
+              rating: 5
+      responses:
+        '200':
+          description: Rating submitted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RatingResponse'
+              example:
+                message: "Rating added successfully"
+                average_rating: 4.5
+        '400':
+          description: Bad request - Invalid rating value (must be 1-5)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                detail: "Rating must be between 1 and 5 (inclusive)"
+        '403':
+          description: Forbidden - User does not have access to this server
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                detail: "You do not have access to this server"
+        '404':
+          description: Not found - Server does not exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                detail: "Server not found at path '/cloudflare-docs'"
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                detail: "Failed to save rating"
+
+  /api/servers/rating:
+    get:
+      tags:
+        - Server Ratings
+      summary: Get server ratings
+      description: |
+        Retrieve rating information for a server including average rating and individual ratings.
+        Returns up to 100 most recent ratings (maintained as a rotating buffer).
+      operationId: getServerRating
+      security:
+        - BasicAuth: []
+      parameters:
+        - name: path
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Server path (e.g., cloudflare-docs)
+          example: cloudflare-docs
+      responses:
+        '200':
+          description: Rating information retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RatingInfoResponse'
+              example:
+                num_stars: 4.5
+                rating_details:
+                  - user: "service-account-admin-bot"
+                    rating: 5
+                  - user: "service-account-lob1-bot"
+                    rating: 4
+        '403':
+          description: Forbidden - User does not have access to this server
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                detail: "You do not have access to this server"
+        '404':
+          description: Not found - Server does not exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                detail: "Server not found at path '/cloudflare-docs'"
+
   /api/admin/tokens:
     get:
       tags:
@@ -836,6 +959,64 @@ components:
                 type: array
                 items:
                   type: string
+
+    RatingRequest:
+      type: object
+      required:
+        - rating
+      properties:
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+          description: Rating value (1-5 stars)
+          example: 5
+
+    RatingResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          description: Success message
+          example: "Rating added successfully"
+        average_rating:
+          type: number
+          format: float
+          minimum: 1.0
+          maximum: 5.0
+          description: Updated average rating across all ratings
+          example: 4.5
+
+    RatingInfoResponse:
+      type: object
+      properties:
+        num_stars:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 5.0
+          description: Average rating across all ratings (0.0 if no ratings)
+          example: 4.5
+        rating_details:
+          type: array
+          description: Individual ratings (max 100, maintained as rotating buffer)
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/RatingDetail'
+
+    RatingDetail:
+      type: object
+      properties:
+        user:
+          type: string
+          description: Username who submitted the rating
+          example: "service-account-admin-bot"
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+          description: Rating value (1-5 stars)
+          example: 5
 
     ErrorResponse:
       type: object
